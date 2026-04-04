@@ -10,15 +10,14 @@ export default function App() {
   const [newPlantName, setNewPlantName] = useState('')
   const [selectedPlant, setSelectedPlant] = useState(null)
   const [newMemo, setNewMemo] = useState('')
+  const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0])
+  const [photo, setPhoto] = useState(null)
+  const [uploading, setUploading] = useState(false)
   const [view, setView] = useState('plants')
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-    })
-    supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-    })
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
+    supabase.auth.onAuthStateChange((_event, session) => setSession(session))
   }, [])
 
   useEffect(() => {
@@ -52,19 +51,39 @@ export default function App() {
 
   async function addPlant() {
     if (!newPlantName) return
-    const { error } = await supabase.from('plants').insert({ name: newPlantName, user_id: session.user.id })
-    if (!error) { setNewPlantName(''); fetchPlants() }
+    await supabase.from('plants').insert({ name: newPlantName, user_id: session.user.id })
+    setNewPlantName('')
+    fetchPlants()
   }
 
   async function addEntry() {
     if (!newMemo || !selectedPlant) return
-    const { error } = await supabase.from('diary_entries').insert({
+    setUploading(true)
+    let photo_url = null
+
+    if (photo) {
+      const fileExt = photo.name.split('.').pop()
+      const fileName = `${session.user.id}/${Date.now()}.${fileExt}`
+      const { error: uploadError } = await supabase.storage.from('photos').upload(fileName, photo)
+      if (!uploadError) {
+        const { data } = supabase.storage.from('photos').getPublicUrl(fileName)
+        photo_url = data.publicUrl
+      }
+    }
+
+    await supabase.from('diary_entries').insert({
       plant_id: selectedPlant.id,
       user_id: session.user.id,
-      entry_date: new Date().toISOString().split('T')[0],
-      memo: newMemo
+      entry_date: newDate,
+      memo: newMemo,
+      photo_url
     })
-    if (!error) { setNewMemo(''); fetchEntries(selectedPlant.id) }
+
+    setNewMemo('')
+    setPhoto(null)
+    setNewDate(new Date().toISOString().split('T')[0])
+    setUploading(false)
+    fetchEntries(selectedPlant.id)
   }
 
   async function deletePlant(id) {
@@ -72,6 +91,11 @@ export default function App() {
     fetchPlants()
     setSelectedPlant(null)
     setView('plants')
+  }
+
+  async function deleteEntry(id) {
+    await supabase.from('diary_entries').delete().eq('id', id)
+    fetchEntries(selectedPlant.id)
   }
 
   if (!session) return (
@@ -119,15 +143,40 @@ export default function App() {
         <div>
           <button onClick={() => setView('plants')} style={{ marginBottom: 15, cursor: 'pointer' }}>← 戻る</button>
           <h2>{selectedPlant.name} の日記</h2>
-          <div style={{ marginBottom: 20 }}>
-            <textarea placeholder="今日の様子を記録..." value={newMemo} onChange={e => setNewMemo(e.target.value)}
-              style={{ width: '100%', padding: 10, height: 80, boxSizing: 'border-box' }} />
-            <button onClick={addEntry} style={{ width: '100%', padding: 10, background: '#4CAF50', color: 'white', border: 'none', cursor: 'pointer' }}>記録する</button>
+          <div style={{ marginBottom: 20, padding: 15, border: '1px solid #ddd' }}>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ display: 'block', marginBottom: 5 }}>📅 日付</label>
+              <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
+                style={{ width: '100%', padding: 10, boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ display: 'block', marginBottom: 5 }}>📝 メモ</label>
+              <textarea placeholder="今日の様子を記録..." value={newMemo} onChange={e => setNewMemo(e.target.value)}
+                style={{ width: '100%', padding: 10, height: 80, boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ display: 'block', marginBottom: 5 }}>📷 写真</label>
+              <input type="file" accept="image/*" onChange={e => setPhoto(e.target.files[0])}
+                style={{ width: '100%' }} />
+            </div>
+            <button onClick={addEntry} disabled={uploading}
+              style={{ width: '100%', padding: 10, background: uploading ? '#aaa' : '#4CAF50', color: 'white', border: 'none', cursor: 'pointer' }}>
+              {uploading ? '保存中...' : '記録する'}
+            </button>
           </div>
+
           {entries.map(entry => (
             <div key={entry.id} style={{ padding: 15, border: '1px solid #ddd', marginBottom: 10 }}>
-              <div style={{ color: '#888', marginBottom: 5 }}>{entry.entry_date}</div>
-              <div>{entry.memo}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ color: '#888' }}>📅 {entry.entry_date}</span>
+                <button onClick={() => deleteEntry(entry.id)}
+                  style={{ padding: '2px 10px', background: '#f44336', color: 'white', border: 'none', cursor: 'pointer', fontSize: 12 }}>削除</button>
+              </div>
+              <div style={{ marginBottom: 8 }}>{entry.memo}</div>
+              {entry.photo_url && (
+                <img src={entry.photo_url} alt="記録写真"
+                  style={{ width: '100%', maxHeight: 300, objectFit: 'cover', borderRadius: 4 }} />
+              )}
             </div>
           ))}
         </div>
