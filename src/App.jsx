@@ -1,6 +1,19 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
 
+const COLORS = {
+  primary: '#5c8a5a',
+  primaryLight: '#f0f7ee',
+  primaryDark: '#3d6b3b',
+  accent: '#a0522d',
+  bg: '#fdf8f0',
+  card: '#ffffff',
+  border: '#e0d5c5',
+  text: '#3a2e1e',
+  textLight: '#8a7a6a',
+  danger: '#c0392b',
+}
+
 export default function App() {
   const [session, setSession] = useState(null)
   const [email, setEmail] = useState('')
@@ -9,6 +22,7 @@ export default function App() {
   const [entries, setEntries] = useState([])
   const [allEntries, setAllEntries] = useState([])
   const [newPlantName, setNewPlantName] = useState('')
+  const [newPlantPhoto, setNewPlantPhoto] = useState(null)
   const [selectedPlant, setSelectedPlant] = useState(null)
   const [newMemo, setNewMemo] = useState('')
   const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0])
@@ -30,7 +44,7 @@ export default function App() {
   }, [session])
 
   async function fetchPlants() {
-    const { data } = await supabase.from('plants').select('*').order('created_at', { ascending: false })
+    const { data } = await supabase.from('plants').select('*').order('created_at', { ascending: true })
     setPlants(data || [])
   }
 
@@ -61,8 +75,21 @@ export default function App() {
 
   async function addPlant() {
     if (!newPlantName) return
-    await supabase.from('plants').insert({ name: newPlantName, user_id: session.user.id })
+    setUploading(true)
+    let photo_url = null
+    if (newPlantPhoto) {
+      const fileExt = newPlantPhoto.name.split('.').pop()
+      const fileName = `plants/${session.user.id}/${Date.now()}.${fileExt}`
+      const { error: uploadError } = await supabase.storage.from('photos').upload(fileName, newPlantPhoto)
+      if (!uploadError) {
+        const { data } = supabase.storage.from('photos').getPublicUrl(fileName)
+        photo_url = data.publicUrl
+      }
+    }
+    await supabase.from('plants').insert({ name: newPlantName, user_id: session.user.id, photo_url })
     setNewPlantName('')
+    setNewPlantPhoto(null)
+    setUploading(false)
     fetchPlants()
   }
 
@@ -120,185 +147,193 @@ export default function App() {
     return allEntries.filter(e => e.entry_date === dateStr)
   }
 
-  function prevMonth() {
-    setCalendarDate(new Date(year, month - 1, 1))
-    setSelectedCalendarDay(null)
-  }
-
-  function nextMonth() {
-    setCalendarDate(new Date(year, month + 1, 1))
-    setSelectedCalendarDay(null)
+  const s = {
+    page: { minHeight: '100vh', background: COLORS.bg, fontFamily: '"Hiragino Kaku Gothic Pro", "Noto Sans JP", sans-serif', color: COLORS.text },
+    inner: { maxWidth: 600, margin: '0 auto', padding: '16px' },
+    header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingBottom: 12, borderBottom: `2px solid ${COLORS.border}` },
+    h1: { margin: 0, fontSize: 22, color: COLORS.primaryDark },
+    tabs: { display: 'flex', gap: 8, marginBottom: 20 },
+    tab: (active) => ({ flex: 1, padding: '10px 0', background: active ? COLORS.primary : COLORS.card, color: active ? 'white' : COLORS.textLight, border: `1px solid ${active ? COLORS.primary : COLORS.border}`, borderRadius: 8, cursor: 'pointer', fontWeight: active ? 'bold' : 'normal', fontSize: 14 }),
+    card: { background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 16, marginBottom: 12, boxShadow: '0 2px 6px rgba(0,0,0,0.06)' },
+    input: { width: '100%', padding: '10px 12px', border: `1px solid ${COLORS.border}`, borderRadius: 8, boxSizing: 'border-box', fontSize: 15, background: COLORS.card, color: COLORS.text },
+    btnPrimary: { padding: '10px 20px', background: COLORS.primary, color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 'bold', fontSize: 14 },
+    btnDanger: { padding: '6px 12px', background: COLORS.danger, color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13 },
+    btnSecondary: { padding: '6px 12px', background: COLORS.card, color: COLORS.text, border: `1px solid ${COLORS.border}`, borderRadius: 6, cursor: 'pointer', fontSize: 13 },
+    label: { display: 'block', marginBottom: 6, fontSize: 13, color: COLORS.textLight, fontWeight: 'bold' },
+    plantImage: { width: '100%', height: 140, objectFit: 'cover', borderRadius: 8, marginBottom: 10 },
+    plantImagePlaceholder: { width: '100%', height: 140, background: COLORS.primaryLight, borderRadius: 8, marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 48 },
   }
 
   if (!session) return (
-    <div style={{ maxWidth: 400, margin: '100px auto', padding: 20, fontFamily: 'sans-serif' }}>
-      <h1 style={{ textAlign: 'center' }}>🌱 水耕栽培日記</h1>
-      <input placeholder="メールアドレス" value={email} onChange={e => setEmail(e.target.value)}
-        style={{ width: '100%', padding: 10, marginBottom: 10, boxSizing: 'border-box' }} />
-      <input placeholder="パスワード" type="password" value={password} onChange={e => setPassword(e.target.value)}
-        style={{ width: '100%', padding: 10, marginBottom: 10, boxSizing: 'border-box' }} />
-      <button onClick={signIn} style={{ width: '100%', padding: 10, marginBottom: 10, background: '#4CAF50', color: 'white', border: 'none', cursor: 'pointer' }}>ログイン</button>
-      <button onClick={signUp} style={{ width: '100%', padding: 10, background: '#888', color: 'white', border: 'none', cursor: 'pointer' }}>新規登録</button>
+    <div style={{ ...s.page, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: '100%', maxWidth: 380, padding: 32, background: COLORS.card, borderRadius: 16, boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}>
+        <h1 style={{ textAlign: 'center', color: COLORS.primaryDark, marginBottom: 24 }}>🌱 水耕栽培日記</h1>
+        <input placeholder="メールアドレス" value={email} onChange={e => setEmail(e.target.value)} style={{ ...s.input, marginBottom: 12 }} />
+        <input placeholder="パスワード" type="password" value={password} onChange={e => setPassword(e.target.value)} style={{ ...s.input, marginBottom: 16 }} />
+        <button onClick={signIn} style={{ ...s.btnPrimary, width: '100%', marginBottom: 10, padding: 12 }}>ログイン</button>
+        <button onClick={signUp} style={{ width: '100%', padding: 12, background: COLORS.card, color: COLORS.textLight, border: `1px solid ${COLORS.border}`, borderRadius: 8, cursor: 'pointer' }}>新規登録</button>
+      </div>
     </div>
   )
 
   return (
-    <div style={{ maxWidth: 600, margin: '0 auto', padding: 20, fontFamily: 'sans-serif' }}>
+    <div style={s.page}>
+      <div style={s.inner}>
 
-      {/* 植物削除確認ダイアログ */}
-      {deleteTarget && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: 'white', padding: 30, borderRadius: 8, maxWidth: 350, width: '90%' }}>
-            <h3 style={{ marginTop: 0 }}>⚠️ 本当に削除しますか？</h3>
-            <p>「{deleteTarget.name}」を削除すると、すべての記録が消えてしまいます。この操作は取り消せません。</p>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setDeleteTarget(null)}
-                style={{ flex: 1, padding: 10, cursor: 'pointer', border: '1px solid #ddd' }}>キャンセル</button>
-              <button onClick={confirmDeletePlant}
-                style={{ flex: 1, padding: 10, background: '#f44336', color: 'white', border: 'none', cursor: 'pointer' }}>削除する</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 日記削除確認ダイアログ */}
-      {deleteEntryTarget && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: 'white', padding: 30, borderRadius: 8, maxWidth: 350, width: '90%' }}>
-            <h3 style={{ marginTop: 0 }}>⚠️ 本当に削除しますか？</h3>
-            <p>「{deleteEntryTarget.entry_date}」の記録を削除します。この操作は取り消せません。</p>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setDeleteEntryTarget(null)}
-                style={{ flex: 1, padding: 10, cursor: 'pointer', border: '1px solid #ddd' }}>キャンセル</button>
-              <button onClick={confirmDeleteEntry}
-                style={{ flex: 1, padding: 10, background: '#f44336', color: 'white', border: 'none', cursor: 'pointer' }}>削除する</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1>🌱 水耕栽培日記</h1>
-        <button onClick={signOut} style={{ padding: '5px 10px', cursor: 'pointer' }}>ログアウト</button>
-      </div>
-
-      {/* タブ */}
-      <div style={{ display: 'flex', gap: 5, marginBottom: 20 }}>
-        {['plants', 'calendar'].map(v => (
-          <button key={v} onClick={() => setView(v)}
-            style={{ flex: 1, padding: 10, background: view === v ? '#4CAF50' : '#eee', color: view === v ? 'white' : 'black', border: 'none', cursor: 'pointer', borderRadius: 4 }}>
-            {v === 'plants' ? '🌿 植物一覧' : '🗓 カレンダー'}
-          </button>
-        ))}
-      </div>
-
-      {/* 植物一覧 */}
-      {view === 'plants' && (
-        <div>
-          <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-            <input placeholder="植物名を入力" value={newPlantName} onChange={e => setNewPlantName(e.target.value)}
-              style={{ flex: 1, padding: 10 }} />
-            <button onClick={addPlant} style={{ padding: '10px 20px', background: '#4CAF50', color: 'white', border: 'none', cursor: 'pointer' }}>追加</button>
-          </div>
-          {plants.map(plant => (
-            <div key={plant.id} style={{ padding: 15, border: '1px solid #ddd', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 18 }}>{plant.name}</span>
+        {/* 植物削除確認 */}
+        {deleteTarget && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+            <div style={{ background: COLORS.card, padding: 28, borderRadius: 12, maxWidth: 340, width: '90%' }}>
+              <h3 style={{ marginTop: 0, color: COLORS.danger }}>⚠️ 本当に削除しますか？</h3>
+              <p style={{ color: COLORS.textLight }}>「{deleteTarget.name}」を削除すると、すべての記録が消えてしまいます。この操作は取り消せません。</p>
               <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={() => { setSelectedPlant(plant); fetchEntries(plant.id); setView('diary') }}
-                  style={{ padding: '5px 15px', background: '#2196F3', color: 'white', border: 'none', cursor: 'pointer' }}>日記を見る</button>
-                <button onClick={() => setDeleteTarget(plant)}
-                  style={{ padding: '5px 15px', background: '#f44336', color: 'white', border: 'none', cursor: 'pointer' }}>削除</button>
+                <button onClick={() => setDeleteTarget(null)} style={{ ...s.btnSecondary, flex: 1, padding: 10 }}>キャンセル</button>
+                <button onClick={confirmDeletePlant} style={{ ...s.btnDanger, flex: 1, padding: 10 }}>削除する</button>
               </div>
             </div>
-          ))}
-        </div>
-      )}
-
-      {/* 日記 */}
-      {view === 'diary' && selectedPlant && (
-        <div>
-          <button onClick={() => setView('plants')} style={{ marginBottom: 15, cursor: 'pointer' }}>← 戻る</button>
-          <h2>{selectedPlant.name} の日記</h2>
-          <div style={{ marginBottom: 20, padding: 15, border: '1px solid #ddd' }}>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ display: 'block', marginBottom: 5 }}>日付</label>
-              <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
-                style={{ width: '100%', padding: 10, boxSizing: 'border-box' }} />
-            </div>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ display: 'block', marginBottom: 5 }}>📝 メモ</label>
-              <textarea placeholder="今日の様子を記録..." value={newMemo} onChange={e => setNewMemo(e.target.value)}
-                style={{ width: '100%', padding: 10, height: 80, boxSizing: 'border-box' }} />
-            </div>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ display: 'block', marginBottom: 5 }}>📷 写真</label>
-              <input type="file" accept="image/*" onChange={e => setPhoto(e.target.files[0])} style={{ width: '100%' }} />
-            </div>
-            <button onClick={addEntry} disabled={uploading}
-              style={{ width: '100%', padding: 10, background: uploading ? '#aaa' : '#4CAF50', color: 'white', border: 'none', cursor: 'pointer' }}>
-              {uploading ? '保存中...' : '記録する'}
-            </button>
           </div>
-          {entries.map(entry => (
-            <div key={entry.id} style={{ padding: 15, border: '1px solid #ddd', marginBottom: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ color: '#888' }}>{entry.entry_date}</span>
-                <button onClick={() => setDeleteEntryTarget(entry)}
-                  style={{ padding: '2px 10px', background: '#f44336', color: 'white', border: 'none', cursor: 'pointer', fontSize: 12 }}>削除</button>
+        )}
+
+        {/* 日記削除確認 */}
+        {deleteEntryTarget && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+            <div style={{ background: COLORS.card, padding: 28, borderRadius: 12, maxWidth: 340, width: '90%' }}>
+              <h3 style={{ marginTop: 0, color: COLORS.danger }}>⚠️ 本当に削除しますか？</h3>
+              <p style={{ color: COLORS.textLight }}>「{deleteEntryTarget.entry_date}」の記録を削除します。この操作は取り消せません。</p>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => setDeleteEntryTarget(null)} style={{ ...s.btnSecondary, flex: 1, padding: 10 }}>キャンセル</button>
+                <button onClick={confirmDeleteEntry} style={{ ...s.btnDanger, flex: 1, padding: 10 }}>削除する</button>
               </div>
-              <div style={{ marginBottom: 8 }}>{entry.memo}</div>
-              {entry.photo_url && <img src={entry.photo_url} alt="記録写真" style={{ width: '100%', maxHeight: 300, objectFit: 'cover', borderRadius: 4 }} />}
             </div>
-          ))}
+          </div>
+        )}
+
+        {/* ヘッダー */}
+        <div style={s.header}>
+          <h1 style={s.h1}>🌱 水耕栽培日記</h1>
+          <button onClick={signOut} style={s.btnSecondary}>ログアウト</button>
         </div>
-      )}
 
-      {/* カレンダー */}
-      {view === 'calendar' && (
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
-            <button onClick={prevMonth} style={{ padding: '5px 15px', cursor: 'pointer' }}>←</button>
-            <strong>{year}年{month + 1}月</strong>
-            <button onClick={nextMonth} style={{ padding: '5px 15px', cursor: 'pointer' }}>→</button>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 15 }}>
-            {['日','月','火','水','木','金','土'].map(d => (
-              <div key={d} style={{ textAlign: 'center', fontWeight: 'bold', padding: 5, fontSize: 12 }}>{d}</div>
-            ))}
-            {Array(firstDay).fill(null).map((_, i) => <div key={`empty-${i}`} />)}
-            {Array(daysInMonth).fill(null).map((_, i) => {
-              const day = i + 1
-              const dayEntries = getEntriesForDay(day)
-              const hasEntries = dayEntries.length > 0
-              const isSelected = selectedCalendarDay === day
-              return (
-                <div key={day} onClick={() => setSelectedCalendarDay(isSelected ? null : day)}
-                  style={{ textAlign: 'center', padding: 8, border: isSelected ? '2px solid #4CAF50' : '1px solid #eee', cursor: hasEntries ? 'pointer' : 'default', background: hasEntries ? '#f0fff0' : 'white', borderRadius: 4, minHeight: 40 }}>
-                  <div style={{ fontSize: 13 }}>{day}</div>
-                  {hasEntries && <div style={{ fontSize: 10, color: '#4CAF50' }}>🌱</div>}
-                </div>
-              )
-            })}
-          </div>
+        {/* タブ */}
+        <div style={s.tabs}>
+          <button style={s.tab(view === 'plants' || view === 'diary')} onClick={() => setView('plants')}>🌿 植物一覧</button>
+          <button style={s.tab(view === 'calendar')} onClick={() => setView('calendar')}>🗓 カレンダー</button>
+        </div>
 
-          {selectedCalendarDay && (
-            <div>
-              <h3>{year}年{month + 1}月{selectedCalendarDay}日の記録</h3>
-              {getEntriesForDay(selectedCalendarDay).length === 0 ? (
-                <p style={{ color: '#888' }}>この日の記録はありません</p>
-              ) : (
-                getEntriesForDay(selectedCalendarDay).map(entry => (
-                  <div key={entry.id} style={{ padding: 15, border: '1px solid #ddd', marginBottom: 10 }}>
-                    <div style={{ fontWeight: 'bold', color: '#4CAF50', marginBottom: 5 }}>🌿 {entry.plants?.name}</div>
-                    <div style={{ marginBottom: 8 }}>{entry.memo}</div>
-                    {entry.photo_url && <img src={entry.photo_url} alt="記録写真" style={{ width: '100%', maxHeight: 300, objectFit: 'cover', borderRadius: 4 }} />}
+        {/* 植物一覧 */}
+        {view === 'plants' && (
+          <div>
+            <div style={{ ...s.card, background: COLORS.primaryLight }}>
+              <label style={s.label}>植物名</label>
+              <input placeholder="例：ネギ、ミニトマト" value={newPlantName} onChange={e => setNewPlantName(e.target.value)} style={{ ...s.input, marginBottom: 10 }} />
+              <label style={s.label}>植物の写真（任意）</label>
+              <input type="file" accept="image/*" onChange={e => setNewPlantPhoto(e.target.files[0])} style={{ marginBottom: 12, width: '100%' }} />
+              <button onClick={addPlant} disabled={uploading} style={{ ...s.btnPrimary, width: '100%' }}>
+                {uploading ? '追加中...' : '＋ 植物を追加'}
+              </button>
+            </div>
+
+            {plants.map(plant => (
+              <div key={plant.id} style={s.card}>
+                {plant.photo_url
+                  ? <img src={plant.photo_url} alt={plant.name} style={s.plantImage} />
+                  : <div style={s.plantImagePlaceholder}>🌿</div>
+                }
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.primaryDark }}>{plant.name}</span>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => { setSelectedPlant(plant); fetchEntries(plant.id); setView('diary') }} style={s.btnPrimary}>日記を見る</button>
+                    <button onClick={() => setDeleteTarget(plant)} style={s.btnDanger}>削除</button>
                   </div>
-                ))
-              )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 日記 */}
+        {view === 'diary' && selectedPlant && (
+          <div>
+            <button onClick={() => setView('plants')} style={{ ...s.btnSecondary, marginBottom: 16 }}>← 戻る</button>
+
+            {selectedPlant.photo_url
+              ? <img src={selectedPlant.photo_url} alt={selectedPlant.name} style={{ ...s.plantImage, height: 200 }} />
+              : <div style={{ ...s.plantImagePlaceholder, height: 120 }}>🌿</div>
+            }
+            <h2 style={{ color: COLORS.primaryDark, marginTop: 0 }}>{selectedPlant.name} の日記</h2>
+
+            <div style={{ ...s.card, background: COLORS.primaryLight }}>
+              <label style={s.label}>日付</label>
+              <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} style={{ ...s.input, marginBottom: 10 }} />
+              <label style={s.label}>メモ</label>
+              <textarea placeholder="今日の様子を記録..." value={newMemo} onChange={e => setNewMemo(e.target.value)}
+                style={{ ...s.input, height: 80, resize: 'vertical', marginBottom: 10 }} />
+              <label style={s.label}>写真</label>
+              <input type="file" accept="image/*" onChange={e => setPhoto(e.target.files[0])} style={{ marginBottom: 12, width: '100%' }} />
+              <button onClick={addEntry} disabled={uploading} style={{ ...s.btnPrimary, width: '100%' }}>
+                {uploading ? '保存中...' : '記録する'}
+              </button>
             </div>
-          )}
-        </div>
-      )}
+
+            {entries.map(entry => (
+              <div key={entry.id} style={s.card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <span style={{ color: COLORS.textLight, fontSize: 13 }}>{entry.entry_date}</span>
+                  <button onClick={() => setDeleteEntryTarget(entry)} style={s.btnDanger}>削除</button>
+                </div>
+                <p style={{ margin: '0 0 10px', lineHeight: 1.6 }}>{entry.memo}</p>
+                {entry.photo_url && <img src={entry.photo_url} alt="記録写真" style={{ width: '100%', borderRadius: 8, maxHeight: 300, objectFit: 'cover' }} />}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* カレンダー */}
+        {view === 'calendar' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <button onClick={() => { setCalendarDate(new Date(year, month - 1, 1)); setSelectedCalendarDay(null) }} style={s.btnSecondary}>←</button>
+              <strong style={{ fontSize: 16 }}>{year}年{month + 1}月</strong>
+              <button onClick={() => { setCalendarDate(new Date(year, month + 1, 1)); setSelectedCalendarDay(null) }} style={s.btnSecondary}>→</button>
+            </div>
+            <div style={{ ...s.card, padding: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
+                {['日','月','火','水','木','金','土'].map(d => (
+                  <div key={d} style={{ textAlign: 'center', fontWeight: 'bold', padding: '6px 0', fontSize: 12, color: COLORS.textLight }}>{d}</div>
+                ))}
+                {Array(firstDay).fill(null).map((_, i) => <div key={`e-${i}`} />)}
+                {Array(daysInMonth).fill(null).map((_, i) => {
+                  const day = i + 1
+                  const dayEntries = getEntriesForDay(day)
+                  const hasEntries = dayEntries.length > 0
+                  const isSelected = selectedCalendarDay === day
+                  return (
+                    <div key={day} onClick={() => hasEntries && setSelectedCalendarDay(isSelected ? null : day)}
+                      style={{ textAlign: 'center', padding: '6px 2px', border: isSelected ? `2px solid ${COLORS.primary}` : '1px solid #eee', cursor: hasEntries ? 'pointer' : 'default', background: isSelected ? COLORS.primaryLight : hasEntries ? '#f5fff4' : 'white', borderRadius: 6, minHeight: 44 }}>
+                      <div style={{ fontSize: 13 }}>{day}</div>
+                      {hasEntries && <div style={{ fontSize: 14 }}>🌱</div>}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {selectedCalendarDay && (
+              <div>
+                <h3 style={{ color: COLORS.primaryDark }}>{year}年{month + 1}月{selectedCalendarDay}日の記録</h3>
+                {getEntriesForDay(selectedCalendarDay).map(entry => (
+                  <div key={entry.id} style={s.card}>
+                    <div style={{ fontWeight: 'bold', color: COLORS.primary, marginBottom: 6 }}>🌿 {entry.plants?.name}</div>
+                    <p style={{ margin: '0 0 10px', lineHeight: 1.6 }}>{entry.memo}</p>
+                    {entry.photo_url && <img src={entry.photo_url} alt="記録写真" style={{ width: '100%', borderRadius: 8, maxHeight: 300, objectFit: 'cover' }} />}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+      </div>
     </div>
   )
 }
