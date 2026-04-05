@@ -18,6 +18,7 @@ export default function App() {
   const [calendarDate, setCalendarDate] = useState(new Date())
   const [selectedCalendarDay, setSelectedCalendarDay] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleteEntryTarget, setDeleteEntryTarget] = useState(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
@@ -102,13 +103,13 @@ export default function App() {
     setView('plants')
   }
 
-  async function deleteEntry(id) {
-    await supabase.from('diary_entries').delete().eq('id', id)
-    fetchEntries(selectedPlant.id)
+  async function confirmDeleteEntry() {
+    await supabase.from('diary_entries').delete().eq('id', deleteEntryTarget.id)
+    setDeleteEntryTarget(null)
+    if (selectedPlant) fetchEntries(selectedPlant.id)
     fetchAllEntries()
   }
 
-  // カレンダー関連
   const year = calendarDate.getFullYear()
   const month = calendarDate.getMonth()
   const firstDay = new Date(year, month, 1).getDay()
@@ -144,7 +145,7 @@ export default function App() {
   return (
     <div style={{ maxWidth: 600, margin: '0 auto', padding: 20, fontFamily: 'sans-serif' }}>
 
-      {/* 削除確認ダイアログ */}
+      {/* 植物削除確認ダイアログ */}
       {deleteTarget && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: 'white', padding: 30, borderRadius: 8, maxWidth: 350, width: '90%' }}>
@@ -154,6 +155,22 @@ export default function App() {
               <button onClick={() => setDeleteTarget(null)}
                 style={{ flex: 1, padding: 10, cursor: 'pointer', border: '1px solid #ddd' }}>キャンセル</button>
               <button onClick={confirmDeletePlant}
+                style={{ flex: 1, padding: 10, background: '#f44336', color: 'white', border: 'none', cursor: 'pointer' }}>削除する</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 日記削除確認ダイアログ */}
+      {deleteEntryTarget && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'white', padding: 30, borderRadius: 8, maxWidth: 350, width: '90%' }}>
+            <h3 style={{ marginTop: 0 }}>⚠️ 本当に削除しますか？</h3>
+            <p>「{deleteEntryTarget.entry_date}」の記録を削除します。この操作は取り消せません。</p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setDeleteEntryTarget(null)}
+                style={{ flex: 1, padding: 10, cursor: 'pointer', border: '1px solid #ddd' }}>キャンセル</button>
+              <button onClick={confirmDeleteEntry}
                 style={{ flex: 1, padding: 10, background: '#f44336', color: 'white', border: 'none', cursor: 'pointer' }}>削除する</button>
             </div>
           </div>
@@ -170,7 +187,7 @@ export default function App() {
         {['plants', 'calendar'].map(v => (
           <button key={v} onClick={() => setView(v)}
             style={{ flex: 1, padding: 10, background: view === v ? '#4CAF50' : '#eee', color: view === v ? 'white' : 'black', border: 'none', cursor: 'pointer', borderRadius: 4 }}>
-            {v === 'plants' ? '🌿 植物一覧' : '📅 カレンダー'}
+            {v === 'plants' ? '🌿 植物一覧' : '🗓 カレンダー'}
           </button>
         ))}
       </div>
@@ -204,7 +221,7 @@ export default function App() {
           <h2>{selectedPlant.name} の日記</h2>
           <div style={{ marginBottom: 20, padding: 15, border: '1px solid #ddd' }}>
             <div style={{ marginBottom: 10 }}>
-              <label style={{ display: 'block', marginBottom: 5 }}>📅 日付</label>
+              <label style={{ display: 'block', marginBottom: 5 }}>日付</label>
               <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
                 style={{ width: '100%', padding: 10, boxSizing: 'border-box' }} />
             </div>
@@ -225,8 +242,8 @@ export default function App() {
           {entries.map(entry => (
             <div key={entry.id} style={{ padding: 15, border: '1px solid #ddd', marginBottom: 10 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ color: '#888' }}>📅 {entry.entry_date}</span>
-                <button onClick={() => deleteEntry(entry.id)}
+                <span style={{ color: '#888' }}>{entry.entry_date}</span>
+                <button onClick={() => setDeleteEntryTarget(entry)}
                   style={{ padding: '2px 10px', background: '#f44336', color: 'white', border: 'none', cursor: 'pointer', fontSize: 12 }}>削除</button>
               </div>
               <div style={{ marginBottom: 8 }}>{entry.memo}</div>
@@ -258,7 +275,7 @@ export default function App() {
                 <div key={day} onClick={() => setSelectedCalendarDay(isSelected ? null : day)}
                   style={{ textAlign: 'center', padding: 8, border: isSelected ? '2px solid #4CAF50' : '1px solid #eee', cursor: hasEntries ? 'pointer' : 'default', background: hasEntries ? '#f0fff0' : 'white', borderRadius: 4, minHeight: 40 }}>
                   <div style={{ fontSize: 13 }}>{day}</div>
-                  {hasEntries && <div style={{ fontSize: 10, color: '#4CAF50' }}>●</div>}
+                  {hasEntries && <div style={{ fontSize: 10, color: '#4CAF50' }}>🌱</div>}
                 </div>
               )
             })}
