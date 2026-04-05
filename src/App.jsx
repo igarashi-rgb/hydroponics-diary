@@ -33,6 +33,9 @@ export default function App() {
   const [selectedCalendarDay, setSelectedCalendarDay] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleteEntryTarget, setDeleteEntryTarget] = useState(null)
+  const [editPhotoTarget, setEditPhotoTarget] = useState(null)
+  const [editPhoto, setEditPhoto] = useState(null)
+  const [editUploading, setEditUploading] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
@@ -137,6 +140,35 @@ export default function App() {
     fetchAllEntries()
   }
 
+  async function updatePlantPhoto() {
+    if (!editPhoto) return
+    setEditUploading(true)
+    const fileExt = editPhoto.name.split('.').pop()
+    const fileName = `plants/${session.user.id}/${Date.now()}.${fileExt}`
+    const { error: uploadError } = await supabase.storage.from('photos').upload(fileName, editPhoto)
+    if (!uploadError) {
+      const { data } = supabase.storage.from('photos').getPublicUrl(fileName)
+      await supabase.from('plants').update({ photo_url: data.publicUrl }).eq('id', editPhotoTarget.id)
+      setEditPhotoTarget(null)
+      setEditPhoto(null)
+      fetchPlants()
+      if (selectedPlant?.id === editPhotoTarget.id) {
+        setSelectedPlant({ ...selectedPlant, photo_url: data.publicUrl })
+      }
+    }
+    setEditUploading(false)
+  }
+
+  async function deletePlantPhoto() {
+    await supabase.from('plants').update({ photo_url: null }).eq('id', editPhotoTarget.id)
+    setEditPhotoTarget(null)
+    setEditPhoto(null)
+    fetchPlants()
+    if (selectedPlant?.id === editPhotoTarget.id) {
+      setSelectedPlant({ ...selectedPlant, photo_url: null })
+    }
+  }
+
   const year = calendarDate.getFullYear()
   const month = calendarDate.getMonth()
   const firstDay = new Date(year, month, 1).getDay()
@@ -208,6 +240,32 @@ export default function App() {
           </div>
         )}
 
+        {/* 植物画像編集ダイアログ */}
+        {editPhotoTarget && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+            <div style={{ background: COLORS.card, padding: 28, borderRadius: 12, maxWidth: 340, width: '90%' }}>
+              <h3 style={{ marginTop: 0, color: COLORS.primaryDark }}>📷 画像を編集</h3>
+              <p style={{ color: COLORS.textLight }}>「{editPhotoTarget.name}」の画像を変更または削除します。</p>
+              {editPhotoTarget.photo_url && (
+                <img src={editPhotoTarget.photo_url} alt={editPhotoTarget.name}
+                  style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 8, marginBottom: 12 }} />
+              )}
+              <input type="file" accept="image/*" onChange={e => setEditPhoto(e.target.files[0])}
+                style={{ marginBottom: 12, width: '100%' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <button onClick={updatePlantPhoto} disabled={!editPhoto || editUploading}
+                  style={{ ...s.btnPrimary, opacity: !editPhoto || editUploading ? 0.5 : 1 }}>
+                  {editUploading ? '更新中...' : '画像を更新する'}
+                </button>
+                {editPhotoTarget.photo_url && (
+                  <button onClick={deletePlantPhoto} style={s.btnDanger}>画像を削除する</button>
+                )}
+                <button onClick={() => { setEditPhotoTarget(null); setEditPhoto(null) }} style={s.btnSecondary}>キャンセル</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ヘッダー */}
         <div style={s.header}>
           <h1 style={s.h1}>🌱 水耕栽培日記</h1>
@@ -233,21 +291,30 @@ export default function App() {
               </button>
             </div>
 
-            {plants.map(plant => (
-              <div key={plant.id} style={s.card}>
-                {plant.photo_url
-                  ? <img src={plant.photo_url} alt={plant.name} style={s.plantImage} />
-                  : <div style={s.plantImagePlaceholder}>🌿</div>
-                }
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 18, fontWeight: 'bold', color: COLORS.primaryDark }}>{plant.name}</span>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => { setSelectedPlant(plant); fetchEntries(plant.id); setView('diary') }} style={s.btnPrimary}>日記を見る</button>
-                    <button onClick={() => setDeleteTarget(plant)} style={s.btnDanger}>削除</button>
+            {/* 2列グリッド */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              {plants.map(plant => (
+                <div key={plant.id} style={{ ...s.card, marginBottom: 0, padding: 12 }}>
+                  <div style={{ position: 'relative' }}>
+                    {plant.photo_url
+                      ? <img src={plant.photo_url} alt={plant.name} style={s.plantImage} />
+                      : <div style={s.plantImagePlaceholder}>🌿</div>
+                    }
+                    <button onClick={() => setEditPhotoTarget(plant)}
+                      style={{ position: 'absolute', top: 6, right: 6, padding: '3px 8px', background: 'rgba(0,0,0,0.5)', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
+                      ✏️
+                    </button>
+                  </div>
+                  <p style={{ margin: '0 0 10px', fontWeight: 'bold', color: COLORS.primaryDark, fontSize: 15 }}>{plant.name}</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <button onClick={() => { setSelectedPlant(plant); fetchEntries(plant.id); setView('diary') }}
+                      style={{ ...s.btnPrimary, padding: '7px 0', width: '100%', fontSize: 13 }}>日記を見る</button>
+                    <button onClick={() => setDeleteTarget(plant)}
+                      style={{ ...s.btnDanger, padding: '7px 0', width: '100%', fontSize: 13 }}>削除</button>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
 
@@ -255,11 +322,16 @@ export default function App() {
         {view === 'diary' && selectedPlant && (
           <div>
             <button onClick={() => setView('plants')} style={{ ...s.btnSecondary, marginBottom: 16 }}>← 戻る</button>
-
-            {selectedPlant.photo_url
-              ? <img src={selectedPlant.photo_url} alt={selectedPlant.name} style={{ ...s.plantImage, height: 200 }} />
-              : <div style={{ ...s.plantImagePlaceholder, height: 120 }}>🌿</div>
-            }
+            <div style={{ position: 'relative' }}>
+              {selectedPlant.photo_url
+                ? <img src={selectedPlant.photo_url} alt={selectedPlant.name} style={{ ...s.plantImage, height: 200 }} />
+                : <div style={{ ...s.plantImagePlaceholder, height: 120 }}>🌿</div>
+              }
+              <button onClick={() => setEditPhotoTarget(selectedPlant)}
+                style={{ position: 'absolute', top: 8, right: 8, padding: '4px 10px', background: 'rgba(0,0,0,0.5)', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13 }}>
+                ✏️ 画像を編集
+              </button>
+            </div>
             <h2 style={{ color: COLORS.primaryDark, marginTop: 0 }}>{selectedPlant.name} の日記</h2>
 
             <div style={{ ...s.card, background: COLORS.primaryLight }}>
