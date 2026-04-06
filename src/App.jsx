@@ -1,11 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
 
 const COLORS = {
   primary: '#5c8a5a',
   primaryLight: '#f0f7ee',
   primaryDark: '#3d6b3b',
-  accent: '#a0522d',
   bg: '#fdf8f0',
   card: '#ffffff',
   border: '#e0d5c5',
@@ -36,6 +35,8 @@ export default function App() {
   const [editPhotoTarget, setEditPhotoTarget] = useState(null)
   const [editPhoto, setEditPhoto] = useState(null)
   const [editUploading, setEditUploading] = useState(false)
+  const [openMenuId, setOpenMenuId] = useState(null)
+  const menuRef = useRef(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
@@ -45,6 +46,16 @@ export default function App() {
   useEffect(() => {
     if (session) { fetchPlants(); fetchAllEntries() }
   }, [session])
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setOpenMenuId(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   async function fetchPlants() {
     const { data } = await supabase.from('plants').select('*').order('created_at', { ascending: true })
@@ -250,8 +261,7 @@ export default function App() {
                 <img src={editPhotoTarget.photo_url} alt={editPhotoTarget.name}
                   style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 8, marginBottom: 12 }} />
               )}
-              <input type="file" accept="image/*" onChange={e => setEditPhoto(e.target.files[0])}
-                style={{ marginBottom: 12, width: '100%' }} />
+              <input type="file" accept="image/*" onChange={e => setEditPhoto(e.target.files[0])} style={{ marginBottom: 12, width: '100%' }} />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <button onClick={updatePlantPhoto} disabled={!editPhoto || editUploading}
                   style={{ ...s.btnPrimary, opacity: !editPhoto || editUploading ? 0.5 : 1 }}>
@@ -292,26 +302,38 @@ export default function App() {
             </div>
 
             {/* 2列グリッド */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }} ref={menuRef}>
               {plants.map(plant => (
-                <div key={plant.id} style={{ ...s.card, marginBottom: 0, padding: 12 }}>
-                  <div style={{ position: 'relative' }}>
-                    {plant.photo_url
-                      ? <img src={plant.photo_url} alt={plant.name} style={s.plantImage} />
-                      : <div style={s.plantImagePlaceholder}>🌿</div>
-                    }
-                    <button onClick={() => setEditPhotoTarget(plant)}
-                      style={{ position: 'absolute', top: 6, right: 6, padding: '3px 8px', background: 'rgba(0,0,0,0.5)', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
-                      ✏️
+                <div key={plant.id} style={{ ...s.card, marginBottom: 0, padding: 12, position: 'relative' }}>
+                  {/* ⋯ メニューボタン */}
+                  <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 10 }}>
+                    <button
+                      onClick={() => setOpenMenuId(openMenuId === plant.id ? null : plant.id)}
+                      style={{ padding: '2px 8px', background: 'rgba(0,0,0,0.45)', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>
+                      ···
                     </button>
+                    {openMenuId === plant.id && (
+                      <div style={{ position: 'absolute', right: 0, top: 30, background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.15)', minWidth: 140, zIndex: 100 }}>
+                        <button onClick={() => { setEditPhotoTarget(plant); setOpenMenuId(null) }}
+                          style={{ display: 'block', width: '100%', padding: '10px 16px', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontSize: 14, color: COLORS.text }}>
+                          📷 画像を編集
+                        </button>
+                        <div style={{ borderTop: `1px solid ${COLORS.border}` }} />
+                        <button onClick={() => { setDeleteTarget(plant); setOpenMenuId(null) }}
+                          style={{ display: 'block', width: '100%', padding: '10px 16px', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontSize: 14, color: COLORS.danger }}>
+                          🗑 削除する
+                        </button>
+                      </div>
+                    )}
                   </div>
+
+                  {plant.photo_url
+                    ? <img src={plant.photo_url} alt={plant.name} style={s.plantImage} />
+                    : <div style={s.plantImagePlaceholder}>🌿</div>
+                  }
                   <p style={{ margin: '0 0 10px', fontWeight: 'bold', color: COLORS.primaryDark, fontSize: 15 }}>{plant.name}</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <button onClick={() => { setSelectedPlant(plant); fetchEntries(plant.id); setView('diary') }}
-                      style={{ ...s.btnPrimary, padding: '7px 0', width: '100%', fontSize: 13 }}>日記を見る</button>
-                    <button onClick={() => setDeleteTarget(plant)}
-                      style={{ ...s.btnDanger, padding: '7px 0', width: '100%', fontSize: 13 }}>削除</button>
-                  </div>
+                  <button onClick={() => { setSelectedPlant(plant); fetchEntries(plant.id); setView('diary') }}
+                    style={{ ...s.btnPrimary, padding: '8px 0', width: '100%', fontSize: 13 }}>日記を見る</button>
                 </div>
               ))}
             </div>
