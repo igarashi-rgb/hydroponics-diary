@@ -13,6 +13,73 @@ const COLORS = {
   danger: '#c0392b',
 }
 
+function SharePage({ token }) {
+  const [plants, setPlants] = useState([])
+  const [entries, setEntries] = useState({})
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function load() {
+      const { data: plantsData } = await supabase
+        .from('plants')
+        .select('*')
+        .eq('share_token', token)
+      setPlants(plantsData || [])
+      const allEntries = {}
+      for (const plant of plantsData || []) {
+        const { data } = await supabase
+          .from('diary_entries')
+          .select('*')
+          .eq('plant_id', plant.id)
+          .order('entry_date', { ascending: false })
+        allEntries[plant.id] = data || []
+      }
+      setEntries(allEntries)
+      setLoading(false)
+    }
+    load()
+  }, [token])
+
+  const s = {
+    page: { minHeight: '100vh', background: COLORS.bg, fontFamily: '"Hiragino Kaku Gothic Pro", "Noto Sans JP", sans-serif', color: COLORS.text },
+    inner: { maxWidth: 600, margin: '0 auto', padding: '16px' },
+    card: { background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 16, marginBottom: 12, boxShadow: '0 2px 6px rgba(0,0,0,0.06)' },
+  }
+
+  if (loading) return <div style={{ ...s.page, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><p>読み込み中...</p></div>
+
+  if (plants.length === 0) return (
+    <div style={{ ...s.page, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <p>共有ページが見つかりません。</p>
+    </div>
+  )
+
+  return (
+    <div style={s.page}>
+      <div style={s.inner}>
+        <h1 style={{ color: COLORS.primaryDark, borderBottom: `2px solid ${COLORS.border}`, paddingBottom: 12 }}>🌱 水耕栽培日記</h1>
+        <p style={{ color: COLORS.textLight, marginBottom: 24 }}>閲覧専用ページです</p>
+        {plants.map(plant => (
+          <div key={plant.id} style={{ marginBottom: 32 }}>
+            {plant.photo_url
+              ? <img src={plant.photo_url} alt={plant.name} style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 10, marginBottom: 10 }} />
+              : <div style={{ width: '100%', height: 120, background: COLORS.primaryLight, borderRadius: 10, marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 48 }}>🌿</div>
+            }
+            <h2 style={{ color: COLORS.primaryDark, margin: '0 0 12px' }}>{plant.name}</h2>
+            {(entries[plant.id] || []).map(entry => (
+              <div key={entry.id} style={s.card}>
+                <div style={{ color: COLORS.textLight, fontSize: 13, marginBottom: 8 }}>{entry.entry_date}</div>
+                <p style={{ margin: '0 0 10px', lineHeight: 1.6 }}>{entry.memo}</p>
+                {entry.photo_url && <img src={entry.photo_url} alt="記録写真" style={{ width: '100%', borderRadius: 8, maxHeight: 300, objectFit: 'cover' }} />}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const [session, setSession] = useState(null)
   const [email, setEmail] = useState('')
@@ -36,7 +103,13 @@ export default function App() {
   const [editPhoto, setEditPhoto] = useState(null)
   const [editUploading, setEditUploading] = useState(false)
   const [openMenuId, setOpenMenuId] = useState(null)
+  const [shareUrl, setShareUrl] = useState(null)
   const menuRef = useRef(null)
+
+  // 共有ページの判定
+  const urlParams = new URLSearchParams(window.location.search)
+  const shareToken = urlParams.get('share')
+  if (shareToken) return <SharePage token={shareToken} />
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
@@ -180,6 +253,20 @@ export default function App() {
     }
   }
 
+  async function generateShareLink() {
+    const token = crypto.randomUUID()
+    await supabase.from('plants').update({ share_token: token }).eq('user_id', session.user.id)
+    const url = `${window.location.origin}?share=${token}`
+    setShareUrl(url)
+    await fetchPlants()
+  }
+
+  async function deleteShareLink() {
+    await supabase.from('plants').update({ share_token: null }).eq('user_id', session.user.id)
+    setShareUrl(null)
+    await fetchPlants()
+  }
+
   const year = calendarDate.getFullYear()
   const month = calendarDate.getMonth()
   const firstDay = new Date(year, month, 1).getDay()
@@ -189,6 +276,9 @@ export default function App() {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
     return allEntries.filter(e => e.entry_date === dateStr)
   }
+
+  const existingToken = plants.find(p => p.share_token)?.share_token
+  const currentShareUrl = existingToken ? `${window.location.origin}?share=${existingToken}` : null
 
   const s = {
     page: { minHeight: '100vh', background: COLORS.bg, fontFamily: '"Hiragino Kaku Gothic Pro", "Noto Sans JP", sans-serif', color: COLORS.text },
@@ -282,6 +372,25 @@ export default function App() {
           <button onClick={signOut} style={s.btnSecondary}>ログアウト</button>
         </div>
 
+        {/* 共有リンク */}
+        <div style={{ ...s.card, background: COLORS.primaryLight, marginBottom: 20 }}>
+          <p style={{ margin: '0 0 10px', fontWeight: 'bold', color: COLORS.primaryDark }}>🔗 共有リンク</p>
+          {currentShareUrl ? (
+            <div>
+              <input readOnly value={currentShareUrl} style={{ ...s.input, marginBottom: 8, fontSize: 12, color: COLORS.textLight }} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => { navigator.clipboard.writeText(currentShareUrl); alert('コピーしました！') }}
+                  style={{ ...s.btnPrimary, flex: 1 }}>コピー</button>
+                <button onClick={deleteShareLink} style={{ ...s.btnDanger }}>リンクを削除</button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={generateShareLink} style={{ ...s.btnPrimary, width: '100%' }}>
+              共有リンクを生成する
+            </button>
+          )}
+        </div>
+
         {/* タブ */}
         <div style={s.tabs}>
           <button style={s.tab(view === 'plants' || view === 'diary')} onClick={() => setView('plants')}>🌿 植物一覧</button>
@@ -301,14 +410,11 @@ export default function App() {
               </button>
             </div>
 
-            {/* 2列グリッド */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }} ref={menuRef}>
               {plants.map(plant => (
                 <div key={plant.id} style={{ ...s.card, marginBottom: 0, padding: 12, position: 'relative' }}>
-                  {/* ⋯ メニューボタン */}
                   <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 10 }}>
-                    <button
-                      onClick={() => setOpenMenuId(openMenuId === plant.id ? null : plant.id)}
+                    <button onClick={() => setOpenMenuId(openMenuId === plant.id ? null : plant.id)}
                       style={{ padding: '2px 8px', background: 'rgba(0,0,0,0.45)', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>
                       ···
                     </button>
@@ -326,7 +432,6 @@ export default function App() {
                       </div>
                     )}
                   </div>
-
                   {plant.photo_url
                     ? <img src={plant.photo_url} alt={plant.name} style={s.plantImage} />
                     : <div style={s.plantImagePlaceholder}>🌿</div>
@@ -355,7 +460,6 @@ export default function App() {
               </button>
             </div>
             <h2 style={{ color: COLORS.primaryDark, marginTop: 0 }}>{selectedPlant.name} の日記</h2>
-
             <div style={{ ...s.card, background: COLORS.primaryLight }}>
               <label style={s.label}>日付</label>
               <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} style={{ ...s.input, marginBottom: 10 }} />
@@ -368,7 +472,6 @@ export default function App() {
                 {uploading ? '保存中...' : '記録する'}
               </button>
             </div>
-
             {entries.map(entry => (
               <div key={entry.id} style={s.card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -411,7 +514,6 @@ export default function App() {
                 })}
               </div>
             </div>
-
             {selectedCalendarDay && (
               <div>
                 <h3 style={{ color: COLORS.primaryDark }}>{year}年{month + 1}月{selectedCalendarDay}日の記録</h3>
